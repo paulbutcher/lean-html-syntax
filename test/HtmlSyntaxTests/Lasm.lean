@@ -30,8 +30,8 @@ module
 import HtmlSyntaxTests.Payload
 meta import HtmlSyntaxTests.Payload
 
-/-! The cases of Lasm's `SyntaxTest.lean` that concern `html!`, against lean-html's payload, or
-against `Recorded` where they concern keys and events. -/
+/-! The cases of Lasm's `SyntaxTest.lean` that concern `html!`, against lean-html-renderer's payload,
+or against `Recorded` where they concern keys and events. -/
 
 namespace HtmlSyntaxTests.Lasm
 

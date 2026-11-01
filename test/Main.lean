@@ -3,6 +3,7 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import HtmlSyntaxTests
+import Lean.Data.Json
 
 /-! Times elaborating generated views: a page of 2,001 elements in one `html!` term, and a view
 whose parents hold a thousand literal children each, in content models that fix their order.
@@ -10,7 +11,7 @@ whose parents hold a thousand literal children each, in content models that fix 
 Each time excludes loading the imports and is budgeted in units of a fixed kernel reduction timed in
 the same run, so that the budgets hold on a slower machine. -/
 
-def header : String := "import HtmlSyntax\n\nopen Html\n\n"
+def header : String := "import HtmlSyntax\nimport HtmlRenderer\n\nopen Html\n\n"
 
 def calibration : String :=
   header ++ "theorem calibration : (List.range 20000).foldl (· + ·) 0 = 199990000 := by decide +kernel\n"
@@ -60,7 +61,18 @@ def run (imports unit : Nat) (name : String) (budget : Nat) (source : String) : 
     return false
   return true
 
+/-- The packages a consumer of the root package resolves, which must include no test dependency. -/
+def rootPackages : IO (List String) := do
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile ((".." : System.FilePath) / "lake-manifest.json")))
+  let pkgs ← IO.ofExcept (json.getObjValAs? (Array Lean.Json) "packages")
+  pkgs.toList.mapM fun p => IO.ofExcept (p.getObjValAs? String "name")
+
 def main : IO UInt32 := do
+  let pkgs ← rootPackages
+  let leaked := pkgs.filter fun p => p == "html" || p.contains "renderer"
+  unless leaked.isEmpty do
+    IO.eprintln s!"the root package resolves test dependencies: {leaked}"
+    return 1
   let some imports ← fastest "Imports" header | return 1
   let some calibrated ← fastest "Calibration" calibration | return 1
   let unit := max 1 (calibrated - imports)

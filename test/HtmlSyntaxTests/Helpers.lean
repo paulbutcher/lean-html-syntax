@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import HtmlSyntax
+public import HtmlRenderer
 public meta import Lean.Elab.Command
 
 public section

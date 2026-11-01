@@ -5,10 +5,12 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import HtmlSyntax
+public import HtmlRenderer
 meta import HtmlSyntax
+meta import HtmlRenderer
 
 /-! A payload with event support, as a downstream library would give one, and the rules of
-lean-html's. -/
+lean-html-renderer's. -/
 
 @[expose] public section
 

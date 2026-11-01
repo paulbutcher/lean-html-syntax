@@ -1,9 +1,10 @@
 # html-syntax
 
-A Lean 4 library providing `html!`: JSX-like markup that elaborates to [lean-html-model](https://github.com/paulbutcher/lean-html-model) nodes, with every element's children checked against its content model at compile time. With [lean-html](https://github.com/paulbutcher/lean-html)'s payload, the result is an ordinary `Html.Node cat`: it mixes freely with lean-html's tag functions and renders with lean-html's renderer.
+A Lean 4 library providing `html!`: JSX-like markup that elaborates to [lean-html-model](https://github.com/paulbutcher/lean-html-model) nodes, with every element's children checked against its content model at compile time. With [lean-html-renderer](https://github.com/paulbutcher/lean-html-renderer)'s payload, the result is an ordinary `Html.Node cat`: it renders with that renderer and mixes freely with [lean-html](https://github.com/paulbutcher/lean-html)'s tag functions.
 
 ```lean
 import HtmlSyntax
+import HtmlRenderer
 open Html
 
 def card (title : String) (items : List String) : Html.Node .flow :=
@@ -25,6 +26,8 @@ Add it to your `lakefile.toml`:
 name = "html-syntax"
 git = "https://github.com/paulbutcher/lean-html-syntax"
 ```
+
+It depends on lean-html-model alone. To render, require [lean-html-renderer](https://github.com/paulbutcher/lean-html-renderer) too, or lean-html, which re-exports it.
 
 ## Syntax
 
@@ -49,11 +52,11 @@ def summary (n : Nat) (note : Option (Html.Node .flow)) (tags : Array String) : 
         </div>
 ```
 
-A list holds nodes of one category, so that a list of mixed content takes the category its members widen to, such as `List (Html.Node .flow)`; lean-html's coercions widen each. A splice whose category is unknown, such as `{[]}` or `{none}`, needs its type given.
+A list holds nodes of one category, so that a list of mixed content takes the category its members widen to, such as `List (Html.Node .flow)`; lean-html-model's coercions widen each. A splice whose category is unknown, such as `{[]}` or `{none}`, needs its type given.
 
 ## Elements and categories
 
-Each tag is looked up with lean-html-model's `Html.Elem.ofName?`, `Svg.Elem.ofName?` and `Mathml.Elem.ofName?`. Children are read in the namespace of the categories their parent admits: SVG inside `<svg>`, MathML inside `<math>`, and HTML inside `foreignObject` and MathML token elements, as lean-html-model's content models say. A name containing `-` is a custom element, with lean-html-model's default content model. An unknown name is an error.
+Each tag is looked up with lean-html-model's `Web.Elem.ofNameIn?`, in the namespace `Web.childNamespace` says its parent's children are read in: SVG inside `<svg>`, MathML inside `<math>`, and HTML inside `foreignObject` and MathML token elements. Where nothing says which, as at the top level with no expected type, an element of any namespace may be named. A name containing `-` is a custom element, with lean-html-model's default content model. An unknown name is an error.
 
 Each element takes a category, as in lean-html-model, chosen with its parent's content model, as `Vocabulary.infer` chooses it: `a` is phrasing content in a `<p>` and flow content holding a `<p>`, and `div` is a group of terms and descriptions in a `<dl>`. At the top level, the category comes from the expected type, which the element widens to; `html! <p>…</p>` is a `Node .flow` where one is expected. Where no type says, as inside a lambda passed to `List.map`, an element takes its only category whose content model admits its children, and an element that could take several, such as `a`, needs a type annotation: `(html! <a href="/">x</a> : Html.Node .phrasing)`.
 
@@ -75,7 +78,7 @@ Not checked, since lean-html-model does not model them: constraints on descendan
 
 ## Attributes and payloads
 
-`html!` is generic over the payload `P` each element carries, through `HtmlPayload`:
+`html!` is generic over the payload `P` each element carries, through lean-html-model's `HtmlModel.HtmlPayload`:
 
 ```lean
 class HtmlPayload (P : Type) where
@@ -95,13 +98,13 @@ Attributes are applied in the order written:
 - `style={[("color", c), …]}` is `style` for each property; `style="…"` and `style={s}` with `s : String` are `attr`.
 - `{p}`, with `p : P`, is `append`.
 - `textContent={s}` is a text child and `innerHTML={s}` a verbatim child, so that the content model and `hasVerbatim` see it. Either one, combined with other children, is an error.
-- An event attribute, `on` followed by an upper-case letter such as `onClick={…}`, needs an instance of `EventAttr P "onClick" α`, whose value is of type `α`; the event is named as written, so that `onEnter` may mean what its instance says. A lower-case `onclick` is an error.
+- An event attribute, `on` followed by an upper-case letter such as `onClick={…}`, needs an instance of lean-html-model's `EventAttr P "onClick" α`, whose value is of type `α`; the event is named as written, so that `onEnter` may mean what its instance says. A lower-case `onclick` is an error.
 
-The instance for lean-html's `Html.Attrs` makes a flag a bare attribute when true and nothing when false, drops `key`, and joins styles into one `style` attribute, `color:red;margin-left:4px`. A repeated name is replaced where it first appeared, so that the occurrence written last wins, as in JSX and the DOM, though lean-html would render the first; names compare as lean-html compares them, ignoring ASCII case. It has no `EventAttr` instances, so that an event attribute is an error saying that the payload has no event support.
+lean-html-renderer's instance for its `Html.Attrs` makes a flag a bare attribute when true and nothing when false, drops `key`, and joins styles into one `style` attribute, `color:red;margin-left:4px`. A repeated name is replaced where it first appeared, so that the occurrence written last wins, as in JSX and the DOM, though the renderer would render the first; names compare as the renderer compares them, ignoring ASCII case. It has no `EventAttr` instances, so that an event attribute is an error saying that the payload has no event support.
 
 ## Elaboration time
 
-A view of 2,001 elements in one `html!` term, as `test/Main.lean` generates it, elaborates in about 0.4 seconds beyond loading the imports, where lean-html-model reports about 3 seconds for a term of that size. Each distinct element, category and kinds of children is proved once, as an auxiliary lemma, and reused. `lake test` budgets it, and a view whose parents hold a thousand literal children each, in units of a fixed kernel reduction timed in the same run.
+A view of 2,001 elements in one `html!` term, as `test/Main.lean` generates it, elaborates in about a third of a second beyond loading the imports, where lean-html-model reports about 3 seconds for a term of that size. Each distinct element, category and kinds of children is proved once, as an auxiliary lemma, and reused. `lake test` budgets it, and a view whose parents hold a thousand literal children each, in units of a fixed kernel reduction timed in the same run.
 
 ## Differences from Lasm's `html!`
 

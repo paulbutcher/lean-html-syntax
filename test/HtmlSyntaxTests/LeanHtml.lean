@@ -5,7 +5,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 import HtmlSyntax
+import Html
 meta import HtmlSyntax
+meta import Html
 
 /-! `html!` builds the same trees as lean-html's tag functions, and the two nest in each other. -/
 
@@ -43,7 +45,7 @@ def mixed : Html.Node .flow :=
   "<div><p>from <em>html!</em></p><ul><li>a</li></ul></div>"
 #guard (div [mixed]).render == "<div>" ++ mixed.render ++ "</div>"
 
--- A page, through lean-html's `document`.
+-- A page, through `document`.
 #guard (document (html! <head><title>t</title></head>) (html! <body><p>x</p></body>)).startsWith
   "<!DOCTYPE html>"
 

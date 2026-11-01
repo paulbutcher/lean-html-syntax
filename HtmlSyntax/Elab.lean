@@ -30,10 +30,10 @@ public import HtmlSyntax.Parser
 public import HtmlSyntax.Payload
 public meta import HtmlSyntax.Text
 public meta import HtmlModel
+public meta import HtmlModel.Quote
 public meta import Lean.Elab.Term
 public meta import Lean.Elab.SyntheticMVars
 public meta import Lean.Meta.Tactic.AuxLemma
-public meta import Lean.Elab.Deriving.ToExpr
 public meta import Std.Data.HashMap
 
 /-!
@@ -55,16 +55,6 @@ open Term hiding mkConst
 abbrev Takes (e : Web.Elem) (c : Web.Cat) : Prop := c ∈ Web.vocab.cats e
 
 meta section
-
-deriving instance ToExpr for HtmlModel.Html.Elem
-deriving instance ToExpr for HtmlModel.Html.Cat
-deriving instance ToExpr for HtmlModel.Svg.Elem
-deriving instance ToExpr for HtmlModel.Svg.Group
-deriving instance ToExpr for HtmlModel.Svg.Model
-deriving instance ToExpr for HtmlModel.Svg.Cat
-deriving instance ToExpr for HtmlModel.Mathml.Elem
-deriving instance ToExpr for HtmlModel.Mathml.Cat
-deriving instance ToExpr for HtmlModel.Web.Cat
 
 /-- The segments `html!` produces. -/
 inductive Kind where
@@ -128,56 +118,22 @@ inductive RChild where
   | elem (e : Web.Elem) (c : Web.Cat) (payload : Expr) (children : Array RChild) (name : String)
   | seg (k : Kind) (seg : Expr) (what : String)
   | verbatim (c : Web.Cat) (s : Expr)
-  /-- Sibling elements of category `c`, as one segment. -/
-  | group (c : Web.Cat) (members : Array RChild)
 
 def RChild.kind : RChild → Kind
   | .elem _ c .. | .verbatim c _ => .one c
   | .seg k .. => k
-  | .group c _ => .many c
 
 def RChild.what : RChild → String
   | .elem _ c _ _ name => s!"<{name}> as {catName c}"
   | .seg _ _ what => what
   | .verbatim .. => "innerHTML"
-  | .group c _ => s!"elements of {catName c}"
 
 /-! ### Resolving elements and categories -/
 
-def inNs (ns : Namespace) : Web.Cat → Bool
-  | .html _ => ns == .html
-  | .svg _ => ns == .svg
-  | .mathml _ => ns == .mathml
-  | _ => false
-
-/-- The namespace children are read in: that of the categories the grammar admits, as the HTML
-parser reads HTML wherever lean-html-model admits any element, and in MathML token elements.
-`none` is any namespace, where nothing says which. -/
-def childNs (g : Regex Web.Cat) (ns : Option Namespace) : Option Namespace :=
-  match g.letters.find? fun c => c matches .html _ | .svg _ | .mathml _ | .any with
-  | some (.html _) | some .any => some .html
-  | some (.svg _) => some .svg
-  | some (.mathml _) => some .mathml
-  | _ => ns
-
-def elemsNamed (name : String) : List (Namespace × Web.Elem) :=
-  ((Html.Elem.ofName? name).map fun e => (.html, .html e)).toList ++
-  ((Svg.Elem.ofName? name).map fun e => (.svg, .svg e)).toList ++
-  ((Mathml.Elem.ofName? name).map fun e => (.mathml, .mathml e)).toList ++
-  (if h : isCustomElementName name = true then [(.html, .custom name h)] else [])
-
-/-- Whether an element of another namespace may be named where `ns` is read: one of its
-categories is valid where one of `ns`'s is, as `svg` and `math` are in HTML. -/
-def enters (ns : Namespace) (e : Web.Elem) : Bool :=
-  (Web.vocab.cats e).any fun c => (c :: Web.Cat.above c).any (inNs ns)
-
+/-- `ns` is the namespace a tag is read in, or `none` where nothing says which. -/
 def lookupElem (ns : Option Namespace) (name : String) (ref : Syntax) : Except Err Web.Elem :=
-  let named := elemsNamed name
-  let found : Option (Namespace × Web.Elem) := match ns with
-    | some ns => (named.find? (·.1 == ns)).orElse fun _ => named.find? (enters ns ·.2)
-    | none => named.head?
-  match found, ns with
-  | some (_, e), _ => .ok e
+  match Web.Elem.ofNameIn? ns name, ns with
+  | some e, _ => .ok e
   | none, some .svg | none, some .mathml =>
     .error ⟨ref, s!"unknown {nsName (ns.getD .html)} element <{name}>"⟩
   | none, _ =>
@@ -185,15 +141,8 @@ def lookupElem (ns : Option Namespace) (name : String) (ref : Syntax) : Except E
     else .error ⟨ref, s!"unknown {if ns.isSome then "HTML element" else "element"} <{name}> \
       (custom elements need a `-` in their name)"⟩
 
-/-- Whether `e` as `c` admits children of kinds `ks` taken in any order and number, which implies
-it admits `ks` and is far faster to decide where those children might be whitespace. -/
-def admitsKinds (e : Web.Elem) (c : Web.Cat) (ks : List Kind) : Bool :=
-  let spec := Web.vocab.spec e c
-  decide (Accepts Web.vocab.widens spec.grammar
-    (Shape.kinds (Web.vocab.shape spec.ws (ks.map Kind.segK))))
-
 def admits (e : Web.Elem) (c : Web.Cat) (ks : List Kind) : Bool :=
-  admitsKinds e c ks || decide (Web.vocab.Admits e c (ks.map Kind.segK))
+  decide (Web.vocab.Admits e c (ks.map Kind.segK))
 
 def ordinal (children : Array Child) (i : Nat) : String :=
   let n := ((children.extract 0 i).filter (!·.isWs)).size + 1
@@ -220,30 +169,6 @@ def verbatimCat (e : Web.Elem) (c : Web.Cat) : Web.Cat :=
 /-- The least of `cs`, which widens to every other, as `Vocabulary.infer` chooses. -/
 def least? (cs : List Web.Cat) : Option Web.Cat :=
   cs.find? fun c => cs.all (Web.vocab.widens c)
-
-/-- Each run of sibling elements of one category as one segment. -/
-def groupRuns (rs : Array RChild) : Array RChild :=
-  rs.foldl (init := #[]) fun acc r =>
-    match r, acc.back? with
-    | .elem _ c .., some (.elem _ c' ..) | .elem _ c .., some (.group c' _) =>
-      if c != c' then acc.push r else
-        match acc.back? with
-        | some (.group _ ms) => acc.pop.push (.group c (ms.push r))
-        | some prev => acc.pop.push (.group c #[prev, r])
-        | none => acc.push r
-    | _, _ => acc.push r
-
-/-- The segments `e` as `c` checks its children as, if it admits them. Where they are not in a
-content model taking any order, a run of siblings of one category may become one segment, whose
-language contains theirs: the kernel decides a long run of children that might be whitespace, and
-so are each optional, only slowly. -/
-def segmentsFor (e : Web.Elem) (c : Web.Cat) (rs : Array RChild) : Option (Array RChild) :=
-  let kinds (rs : Array RChild) := rs.toList.map (·.kind)
-  if admitsKinds e c (kinds rs) then some rs else
-    let grouped := groupRuns rs
-    if grouped.size < rs.size && admits e c (kinds grouped) then some grouped
-    else if decide (Web.vocab.Admits e c ((kinds rs).map Kind.segK)) then some rs
-    else none
 
 abbrev Key := Option (Regex Web.Cat) × Option Namespace
 
@@ -286,9 +211,12 @@ def resolveElem (parent : Option (Regex Web.Cat)) (ns : Option Namespace) (name 
       | .ok acc =>
         match child with
         | .verbatim s _ => rs := .ok (acc.push (.verbatim (verbatimCat e c) s))
-        | _ => rs := (acc.push ·) <$> (← resolve (some g) (childNs g ns) child)
+        | _ =>
+          let childNs := (Web.childNamespace e c).orElse fun _ => ns
+          rs := (acc.push ·) <$> (← resolve (some g) childNs child)
     tried := tried.push (c, rs)
-  let segments := tried.map fun (c, rs) => (c, rs.toOption.bind (segmentsFor e c))
+  let segments := tried.map fun (c, rs) =>
+    (c, rs.toOption.filter fun rs => admits e c (rs.toList.map (·.kind)))
   let ok := segments.toList.filterMap fun (c, segs) => segs.map fun _ => c
   let fits (c : Web.Cat) := parent.all fun g => g.letters.any (Web.vocab.widens c)
   let chosen ← match parent with
@@ -442,7 +370,7 @@ syntax (name := eventTerm) "html_event% " str term:max term:max : term
   let P ← instantiateMVars (← inferType p)
   if P.getAppFn.isMVar then tryPostpone
   let α ← mkFreshTypeMVar
-  let cls := mkApp3 (mkConst ``EventAttr) P (mkStrLit name) α
+  let cls := mkApp3 (mkConst ``HtmlModel.EventAttr) P (mkStrLit name) α
   let inst ← if P.getAppFn.isMVar then mkInstMVar cls else
     match ← synthInstance? cls with
     | some inst =>
@@ -451,7 +379,7 @@ syntax (name := eventTerm) "html_event% " str term:max term:max : term
     | none => throwError "html!: the payload{indentExpr P}\nhas no event support: there is no \
         instance of EventAttr {P} \"{name}\" _"
   let v ← elabTermEnsuringType stx[2] (← instantiateMVars α)
-  return mkApp6 (mkConst ``EventAttr.on) P (mkStrLit name) α inst v p
+  return mkApp6 (mkConst ``HtmlModel.EventAttr.on) P (mkStrLit name) α inst v p
 
 /-- What the attributes before one have built. -/
 structure AttrState where
@@ -468,14 +396,14 @@ def elabAttr (P inst : Expr) (st : AttrState) (a : Syntax) : TermElabM AttrState
   let p := st.payload
   match a with
   | `(jsxAttr| { $t:term }) =>
-    return { st with payload := mkApp2 (op ``HtmlPayload.append) p (← elabTermEnsuringType t P) }
+    return { st with payload := mkApp2 (op ``HtmlModel.HtmlPayload.append) p (← elabTermEnsuringType t P) }
   | `(jsxAttr| $n:jsxName) =>
     let name := nameOf n
     if name == "key" || isEventName name || name == "textContent" || name == "innerHTML" then
       throwError "{name} needs a value: {name}=\{…}"
     let name := renamed ((boolAttrs.lookup name).getD name)
     return { st with
-      payload := mkApp3 (op ``HtmlPayload.flag) (mkStrLit name) (mkConst ``Bool.true) p }
+      payload := mkApp3 (op ``HtmlModel.HtmlPayload.flag) (mkStrLit name) (mkConst ``Bool.true) p }
   | `(jsxAttr| $n:jsxName = $v:jsxAttrVal) =>
     let name := nameOf n
     let value : Sum String Syntax := match v.raw[0] with
@@ -490,7 +418,7 @@ def elabAttr (P inst : Expr) (st : AttrState) (a : Syntax) : TermElabM AttrState
     let set (payload : Expr) : TermElabM AttrState := return { st with payload }
     if name == "key" then
       if st.keyed then throwError "the element already has a key"
-      return { st with payload := mkApp2 (op ``HtmlPayload.key) (← valueStr) p, keyed := true }
+      return { st with payload := mkApp2 (op ``HtmlModel.HtmlPayload.key) (← valueStr) p, keyed := true }
     else if name == "textContent" || name == "innerHTML" then
       if st.child.isSome then throwError "the element already has textContent or innerHTML"
       let s ← match value with
@@ -509,17 +437,17 @@ def elabAttr (P inst : Expr) (st : AttrState) (a : Syntax) : TermElabM AttrState
       let .inr t := value | throwError
         "{name} is a boolean attribute: write {name}=\{true}, {name}=\{b} or a bare {name}"
       let b ← elabTermEnsuringType t (mkConst ``Bool)
-      set (mkApp3 (op ``HtmlPayload.flag) (mkStrLit flagName) b p)
+      set (mkApp3 (op ``HtmlModel.HtmlPayload.flag) (mkStrLit flagName) b p)
     else
       let name := renamed name
       match name, value with
       | "style", .inr t =>
         let (e, ty) ← withRef t (elabTyped t)
-        if ty.isConstOf ``String then set (mkApp3 (op ``HtmlPayload.attr) (mkStrLit name) e p)
+        if ty.isConstOf ``String then set (mkApp3 (op ``HtmlModel.HtmlPayload.attr) (mkStrLit name) e p)
         else
           let l ← withRef t <| ensureHasType (← styleListType) e
           set (mkApp2 (mkApp2 (mkConst ``HtmlSyntax.styles) P inst) l p)
-      | _, _ => set (mkApp3 (op ``HtmlPayload.attr) (mkStrLit name) (← valueStr) p)
+      | _, _ => set (mkApp3 (op ``HtmlModel.HtmlPayload.attr) (mkStrLit name) (← valueStr) p)
   | _ => throwError "unsupported attribute"
 
 /-- JSX spacing: whitespace on one line after a child, which the token before it consumed, is a
@@ -542,7 +470,7 @@ def elabElement (P inst : Expr) (fuel : Nat) (e : Syntax) : StateT Nat TermElabM
   let tag := nameOf nameStx
   if let some m := closing then
     if nameOf m != tag then throwErrorAt m "</{nameOf m}> closes <{tag}>"
-  let st ← attrs.foldlM (init := { payload := mkApp2 (mkConst ``HtmlPayload.empty) P inst })
+  let st ← attrs.foldlM (init := { payload := mkApp2 (mkConst ``HtmlModel.HtmlPayload.empty) P inst })
     fun st a => elabAttr P inst st a
   let mut childs := #[]
   let mut prev : Syntax := e[3]
@@ -592,27 +520,7 @@ def decided (p : Expr) : BuildM Expr := do
   modify (·.insert p h)
   return h
 
-def elemExpr : Web.Elem → BuildM Expr
-  | .html e => return mkApp (mkConst ``Web.Elem.html) (toExpr e)
-  | .svg e => return mkApp (mkConst ``Web.Elem.svg) (toExpr e)
-  | .mathml e => return mkApp (mkConst ``Web.Elem.mathml) (toExpr e)
-  | .custom name _ => do
-    let h ← decided
-      (← mkEq (mkApp (mkConst ``isCustomElementName) (mkStrLit name)) (mkConst ``Bool.true))
-    return mkApp2 (mkConst ``Web.Elem.custom) (mkStrLit name) h
-
 def vocabExpr : Expr := mkConst ``Web.vocab
-
-/-- A proof that `e` as `c` admits children of kinds `ks`. Where the content model takes its
-children in any order, the proof is of the coarser `Shape.kinds`, since deciding a shape of many
-children that might be whitespace, and so optional, is slow in the kernel. -/
-def admitsProof (e : Web.Elem) (c : Web.Cat) (ks : List Kind) (eE cE ksE : Expr) : BuildM Expr := do
-  if admitsKinds e c ks then
-    let f := mkApp4 (mkConst ``Vocabulary.admits_of_kinds) vocabExpr eE cE ksE
-    let .forallE _ dom _ _ ← whnf (← inferType f) |
-      throwError "html!: unexpected admits_of_kinds"
-    return mkApp f (← decided dom)
-  decided (mkApp4 (mkConst ``Vocabulary.Admits) vocabExpr eE cE ksE)
 
 /-- `xs` as a tree of `join`s over runs of at most 32, each made by `run`. Lean's compiler
 recurses on a term as deeply as it nests, so that a long chain of `cons` would exceed its depth. -/
@@ -623,10 +531,6 @@ def balanced {α β : Type} (xs : Array α) (run : Array α → β) (join : β �
     join (balanced (xs.extract 0 mid) run join) (balanced (xs.extract mid xs.size) run join)
 termination_by xs.size
 decreasing_by all_goals simp only [Array.size_extract]; omega
-
-def listExpr (ty : Expr) (xs : Array Expr) : Expr :=
-  balanced xs (·.foldr (mkApp3 (mkConst ``List.cons [0]) ty) (mkApp (mkConst ``List.nil [0]) ty))
-    (mkApp3 (mkConst ``List.append [0]) ty)
 
 /-- The kinds of a run of segments, and the segments, of type `Segs` of those kinds. -/
 def segsExpr (P : Expr) (xs : Array (Expr × Expr)) : Expr × Expr :=
@@ -646,18 +550,14 @@ def build (P : Expr) : RChild → BuildM (Expr × Option Expr)
   | .verbatim c s =>
     return (mkApp4 (mkConst ``Seg.one) sigExpr P (toExpr c)
       (mkApp4 (mkConst ``HtmlModel.Node.verbatim) sigExpr P (toExpr c) s), none)
-  | .group c members => do
-    let nodes ← members.attach.filterMapM fun ⟨m, _⟩ => return (← build P m).2
-    let l := listExpr (mkApp2 (mkConst ``Web.Node) P (toExpr c)) nodes
-    return (mkApp4 (mkConst ``Seg.ofList) sigExpr P (toExpr c) l, none)
   | .elem e c payload children _ => do
     let built ← children.attach.mapM fun ⟨child, _⟩ =>
       return (child.kind.toExpr, (← build P child).1)
     let (ks, segs) := segsExpr P built
-    let eE ← elemExpr e
+    let eE := toExpr e
     let cE := toExpr c
     let hc ← decided (mkApp2 (mkConst ``HtmlSyntax.Takes) eE cE)
-    let ok ← admitsProof e c (children.toList.map (·.kind)) eE cE ks
+    let ok ← decided (mkApp4 (mkConst ``Vocabulary.Admits) vocabExpr eE cE ks)
     let n := mkAppN (mkConst ``Web.elem) #[P, eE, cE, payload, ks, segs, hc, ok]
     return (mkApp4 (mkConst ``Seg.one) sigExpr P cE n, some n)
 

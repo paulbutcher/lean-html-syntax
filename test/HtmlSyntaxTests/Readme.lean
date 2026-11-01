@@ -6,6 +6,7 @@ module
 
 import HtmlSyntaxTests.Helpers
 meta import HtmlSyntax
+meta import HtmlRenderer
 
 /-! The examples in the README. -/
 
