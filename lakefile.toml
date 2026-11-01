@@ -1,0 +1,6 @@
+name = "html-syntax"
+version = "0.1.0"
+defaultTargets = ["HtmlSyntax"]
+
+[[lean_lib]]
+name = "HtmlSyntax"
