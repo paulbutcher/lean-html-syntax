@@ -1,0 +1,17 @@
+name = "test"
+defaultTargets = ["HtmlSyntaxTests"]
+testDriver = "tests"
+
+[leanOptions]
+warningAsError = true
+
+[[require]]
+name = "html-syntax"
+path = ".."
+
+[[lean_lib]]
+name = "HtmlSyntaxTests"
+
+[[lean_exe]]
+name = "tests"
+root = "Main"
