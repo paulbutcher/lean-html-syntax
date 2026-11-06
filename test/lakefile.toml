@@ -29,7 +29,7 @@ rev = "v0.1.0"
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.14.0"
+rev = "v0.14.1"
 
 [[lean_lib]]
 name = "HtmlSyntaxTests"
