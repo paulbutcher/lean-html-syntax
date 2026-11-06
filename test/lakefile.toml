@@ -24,7 +24,7 @@ rev = "v0.4.1"
 [[require]]
 name = "html-renderer"
 git = "https://github.com/paulbutcher/lean-html-renderer"
-rev = "v0.1.0"
+rev = "v0.1.1"
 
 [[require]]
 name = "html"
