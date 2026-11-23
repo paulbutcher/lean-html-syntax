@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.0] - 2026-11-23
+
+* Breaking: requires Lean v4.36.0
+
 ## [0.1.3] - 2026-11-06
 
 * Chore: bump test dependencies
