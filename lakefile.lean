@@ -7,10 +7,10 @@ import Lake
 open Lake DSL
 
 package «html-syntax» where
-  version := v!"0.1.3"
+  version := v!"0.2.0"
   leanOptions := #[⟨`warningAsError, true⟩]
 
-require «html-model» from git "https://github.com/paulbutcher/lean-html-model" @ "v0.4.1"
+require «html-model» from git "https://github.com/paulbutcher/lean-html-model" @ "v0.5.0"
 
 @[default_target]
 lean_lib HtmlSyntax

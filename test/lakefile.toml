@@ -19,7 +19,7 @@ rev = "v0.2.1"
 [[require]]
 name = "html-model"
 git = "https://github.com/paulbutcher/lean-html-model"
-rev = "v0.4.1"
+rev = "v0.5.0"
 
 [[require]]
 name = "html-renderer"
@@ -29,7 +29,7 @@ rev = "v0.1.1"
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.14.2"
+rev = "v0.15.0"
 
 [[lean_lib]]
 name = "HtmlSyntaxTests"
