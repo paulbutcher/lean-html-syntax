@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.6] - 2026-11-24
+
+* Chore: bump test dependencies
+
 ## [0.2.5] - 2026-11-24
 
 * Chore: bump test dependencies
