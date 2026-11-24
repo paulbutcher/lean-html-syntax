@@ -14,7 +14,7 @@ path = ".."
 [[require]]
 name = "regular"
 git = "https://github.com/paulbutcher/lean-regular"
-rev = "v0.2.1"
+rev = "v0.3.0"
 
 [[require]]
 name = "html-model"
